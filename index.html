@@ -1,0 +1,673 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#57a93a">
+<title>Buyuk Kids — ERP</title>
+<style>
+:root {
+  --qizil:  #e23a2e;
+  --yashil: #4f9c34;
+  --sariq:  #f5a623;
+  --kok:    #1b6fb8;
+
+  --fon:    #f2f4f1;
+  --oq:     #ffffff;
+  --chiziq: #e3e7e1;
+  --matn:   #1a1f1a;
+  --xira:   #7b8479;
+
+  --ok:   #2b7a45;
+  --warn: #b5761a;
+  --bad:  #c0392b;
+
+  --yon: 234px;
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body {
+  margin: 0; padding: 0; background: var(--fon); color: var(--matn);
+  font-family: ui-sans-serif, system-ui, "Segoe UI", Roboto, Arial, sans-serif;
+  font-size: 15px; line-height: 1.4;
+}
+
+/* ── Ён меню ─────────────────────────── */
+.yon { position: fixed; inset: 0 auto 0 0; width: var(--yon); background: var(--oq);
+  border-right: 1px solid var(--chiziq); display: flex; flex-direction: column;
+  z-index: 40; overflow-y: auto; }
+.logo { padding: 17px 18px 14px; border-bottom: 1px solid var(--chiziq); }
+.logo .txt { font-size: 21px; font-weight: 900; letter-spacing: -.02em; line-height: 1; }
+.logo .b { color: var(--qizil); }
+.logo .leaf { color: var(--yashil); }
+.logo .k { color: var(--sariq); }
+.logo img { max-width: 148px; display: block; }
+.logo .sub { font-size: 10px; letter-spacing: .22em; color: var(--xira);
+  text-transform: uppercase; margin-top: 5px; }
+
+.kim { padding: 12px 18px; border-bottom: 1px solid var(--chiziq);
+  display: flex; align-items: center; gap: 10px; }
+.kim .av { width: 32px; height: 32px; border-radius: 50%; background: var(--yashil);
+  color: #fff; display: grid; place-items: center; font-weight: 700; font-size: 14px; }
+.kim .nm { font-size: 13px; font-weight: 650; line-height: 1.2; }
+.kim .rl { font-size: 11px; color: var(--xira); }
+
+nav { padding: 8px 0 24px; flex: 1; }
+nav .grp { font-size: 10px; letter-spacing: .16em; text-transform: uppercase;
+  color: var(--xira); padding: 14px 18px 6px; }
+nav a { display: flex; align-items: center; gap: 10px; padding: 9px 18px;
+  color: var(--matn); text-decoration: none; font-size: 14px; cursor: pointer;
+  border-left: 3px solid transparent; }
+nav a:hover { background: #f6f8f5; }
+nav a.on { background: #eef5ea; border-left-color: var(--yashil); color: var(--ok); font-weight: 650; }
+nav a.soon { color: #b7bdb5; cursor: default; }
+nav a.soon:hover { background: none; }
+nav a .ic { width: 17px; text-align: center; font-size: 14px; }
+nav a .tez { margin-left: auto; font-size: 9px; letter-spacing: .08em;
+  text-transform: uppercase; color: #c5cbc3; }
+
+/* ── Асосий ─────────────────────────── */
+.asos { margin-left: var(--yon); min-height: 100vh; display: flex; flex-direction: column; }
+.tepa { background: var(--oq); border-bottom: 1px solid var(--chiziq); padding: 0 22px;
+  height: 54px; display: flex; align-items: center; gap: 14px; position: sticky; top: 0; z-index: 30; }
+.tepa h1 { margin: 0; font-size: 17px; font-weight: 700; }
+.tepa .osp { margin-left: auto; display: flex; align-items: center; gap: 9px; }
+.tepa .sana { font-size: 12px; color: var(--xira); font-variant-numeric: tabular-nums; }
+.ic-btn { background: none; border: 1px solid var(--chiziq); border-radius: 6px;
+  width: 32px; height: 32px; font-size: 15px; color: var(--xira); cursor: pointer; }
+.ic-btn:hover { background: var(--fon); color: var(--matn); }
+.burger { display: none; }
+.ish { padding: 18px 22px 40px; flex: 1; }
+
+.chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; }
+.chip { background: var(--oq); border: 1px solid var(--chiziq); border-radius: 6px;
+  color: var(--xira); font-size: 12px; font-weight: 650; padding: 8px 13px; cursor: pointer; }
+.chip:hover { border-color: #c9d1c6; }
+.chip.on { background: var(--yashil); border-color: var(--yashil); color: #fff; }
+
+.kartlar { display: grid; grid-template-columns: repeat(auto-fit, minmax(175px, 1fr));
+  gap: 12px; margin-bottom: 16px; }
+.kart { background: var(--oq); border: 1px solid var(--chiziq); border-radius: 10px; padding: 15px 17px; }
+.kart .lab { font-size: 11px; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--xira); margin-bottom: 5px; }
+.kart .val { font-size: 26px; font-weight: 750; font-variant-numeric: tabular-nums;
+  line-height: 1.1; letter-spacing: -.01em; }
+.kart .qosh { font-size: 12px; color: var(--xira); margin-top: 3px; }
+.kart.katta { grid-column: span 2; }
+.kart.katta .val { font-size: 37px; }
+.ok { color: var(--ok); } .warn { color: var(--warn); } .bad { color: var(--bad); }
+
+.blok { background: var(--oq); border: 1px solid var(--chiziq); border-radius: 10px;
+  overflow: hidden; margin-bottom: 14px; }
+.blok .hd { padding: 13px 17px; border-bottom: 1px solid var(--chiziq); font-size: 12px;
+  font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--xira); }
+.qtr { padding: 12px 17px; border-bottom: 1px solid var(--chiziq); }
+.qtr:last-child { border-bottom: 0; }
+.qtr.clk { cursor: pointer; }
+.qtr.clk:hover { background: #f8faf7; }
+.qtr .top { display: flex; justify-content: space-between; align-items: baseline; gap: 14px; }
+.qtr .nm { font-size: 15px; font-weight: 600; line-height: 1.25; }
+.qtr .fd { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.qtr .bot { display: flex; justify-content: space-between; gap: 14px; margin-top: 4px;
+  font-size: 12px; color: var(--xira); }
+.qtr .bot span { font-variant-numeric: tabular-nums; }
+.bar { height: 4px; background: #eef0ed; border-radius: 2px; margin-top: 8px; overflow: hidden; }
+.bar i { display: block; height: 4px; background: var(--yashil); border-radius: 2px; }
+.bar i.b2 { background: var(--kok); }
+
+/* Жадвал кўриниши — товар ичидаги сотувлар */
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th { text-align: left; font-size: 10px; letter-spacing: .12em; text-transform: uppercase;
+  color: var(--xira); font-weight: 700; padding: 9px 17px; border-bottom: 1px solid var(--chiziq); }
+td { padding: 9px 17px; border-bottom: 1px solid var(--chiziq); font-variant-numeric: tabular-nums; }
+tr:last-child td { border-bottom: 0; }
+td.r, th.r { text-align: right; }
+td.pul { font-weight: 650; color: var(--ok); }
+td.xira { color: var(--xira); }
+
+.bosh { text-align: center; padding: 46px 20px; color: var(--xira); }
+.bosh .em { font-size: 28px; margin-bottom: 8px; }
+.xato { background: #fdecea; border: 1px solid #f5c6c0; color: var(--bad);
+  padding: 14px 17px; border-radius: 10px; }
+.xato b { display: block; font-size: 11px; letter-spacing: .1em; text-transform: uppercase; margin-bottom: 4px; }
+.kut { text-align: center; padding: 46px; color: var(--xira); font-size: 13px;
+  letter-spacing: .08em; text-transform: uppercase; }
+
+dialog { border: 0; border-radius: 12px; padding: 0; background: var(--oq); color: var(--matn);
+  width: min(94vw, 780px); max-height: 90vh; box-shadow: 0 20px 60px rgba(0,0,0,.22); }
+dialog::backdrop { background: rgba(20,30,20,.5); }
+dialog.kichik { width: min(94vw, 440px); }
+.d-hd { display: flex; align-items: center; gap: 12px; padding: 16px 20px;
+  border-bottom: 1px solid var(--chiziq); position: sticky; top: 0; background: var(--oq); }
+.d-hd h2 { margin: 0; font-size: 17px; font-weight: 700; flex: 1; line-height: 1.25; }
+.d-tana { padding: 18px 20px 22px; overflow-y: auto; max-height: calc(90vh - 60px); }
+
+.dlg { padding: 22px; }
+.dlg h2 { margin: 0 0 4px; font-size: 19px; }
+.dlg p { margin: 0 0 14px; font-size: 13px; color: var(--xira); }
+.dlg label { display: block; font-size: 11px; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--xira); margin: 12px 0 5px; }
+.dlg input { width: 100%; font-size: 16px; padding: 11px 12px; background: #fff;
+  color: var(--matn); border: 1px solid var(--chiziq); border-radius: 7px; }
+.dlg input:focus { outline: none; border-color: var(--yashil); }
+.dlg .acts { display: flex; gap: 8px; margin-top: 20px; }
+.btn { border: 0; border-radius: 7px; font-size: 14px; font-weight: 700;
+  padding: 12px 18px; background: var(--yashil); color: #fff; cursor: pointer; }
+.btn.ghost { background: none; color: var(--xira); border: 1px solid var(--chiziq); }
+.dlg .btn { flex: 1; }
+
+.satr { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0;
+  border-bottom: 1px solid var(--chiziq); font-size: 14px; }
+.satr .s-nm { flex: 1; }
+.satr .s-q, .satr .s-v { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.satr .s-q { color: var(--xira); }
+.satr .s-v { font-weight: 650; }
+
+@media (max-width: 820px) {
+  .yon { transform: translateX(-100%); transition: transform .18s ease;
+    box-shadow: 0 0 40px rgba(0,0,0,.15); }
+  .yon.ochiq { transform: none; }
+  .asos { margin-left: 0; }
+  .burger { display: block; }
+  .ish { padding: 14px 14px 40px; }
+  .tepa { padding: 0 14px; }
+  .tepa .sana { display: none; }
+  .kart.katta { grid-column: 1 / -1; }
+  .parda { position: fixed; inset: 0; background: rgba(20,30,20,.4); z-index: 35; display: none; }
+  .parda.ochiq { display: block; }
+  th, td { padding: 8px 12px; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+
+<aside class="yon" id="yon">
+  <div class="logo">
+    <img id="logoRasm" src="logo.png" alt="Buyuk Kids" style="display:none">
+    <div class="txt" id="logoMatn">
+      <span class="b">BU<span class="leaf">Y</span>UK</span> <span class="k">KIDS</span>
+    </div>
+    <div class="sub">ERP тизими</div>
+  </div>
+
+  <div class="kim">
+    <div class="av" id="avatar">?</div>
+    <div>
+      <div class="nm" id="kimNomi">—</div>
+      <div class="rl">Бошқарув</div>
+    </div>
+  </div>
+
+  <nav id="menyu">
+    <a data-p="dashboard" class="on"><span class="ic">▦</span>Дашборд</a>
+
+    <div class="grp">Ҳисобот</div>
+    <a data-p="kunlik"><span class="ic">▤</span>Кунлик ҳисобот</a>
+    <a data-p="cheklar"><span class="ic">▭</span>Чеклар</a>
+
+    <div class="grp">Савдо</div>
+    <a data-p="mahsulot"><span class="ic">◈</span>Маҳсулотлар</a>
+    <a data-p="guruh"><span class="ic">◱</span>Гуруҳлар</a>
+    <a data-p="sotuvchi"><span class="ic">◉</span>Сотувчилар</a>
+    <a data-p="mijoz"><span class="ic">◍</span>Мижозлар</a>
+
+    <div class="grp">Омбор</div>
+    <a class="soon"><span class="ic">▣</span>Инвентаризация<span class="tez">тез орада</span></a>
+    <a class="soon"><span class="ic">▤</span>Кирим<span class="tez">тез орада</span></a>
+    <a class="soon"><span class="ic">◨</span>Қолдиқлар<span class="tez">тез орада</span></a>
+
+    <div class="grp">Бошқарув</div>
+    <a class="soon"><span class="ic">◷</span>Заказлар<span class="tez">тез орада</span></a>
+    <a class="soon"><span class="ic">◐</span>Фойдаланувчилар<span class="tez">тез орада</span></a>
+  </nav>
+</aside>
+
+<div class="parda" id="parda"></div>
+
+<div class="asos">
+  <div class="tepa">
+    <button class="ic-btn burger" id="burger">☰</button>
+    <h1 id="sarlavha">Дашборд</h1>
+    <div class="osp">
+      <span class="sana" id="bugun"></span>
+      <button class="ic-btn" id="yangila" title="Янгилаш">↻</button>
+      <button class="ic-btn" id="sozlama" title="Созламалар">⚙</button>
+    </div>
+  </div>
+
+  <div class="ish">
+    <div class="chips" id="davrlar">
+      <button class="chip" data-davr="bugun">Бугун</button>
+      <button class="chip" data-davr="hafta">7 кун</button>
+      <button class="chip on" data-davr="oy">Шу ой</button>
+      <button class="chip" data-davr="30">30 кун</button>
+      <button class="chip" data-davr="yil">Йил</button>
+    </div>
+    <div id="ekran"><div class="kut">Юкланмоқда…</div></div>
+  </div>
+</div>
+
+<dialog id="dlg" class="kichik">
+  <form method="dialog" class="dlg">
+    <h2>Кириш</h2>
+    <p>ERP фойдаланувчиси. Бир марта киритилади.</p>
+    <label for="usr">Фойдаланувчи</label>
+    <input type="text" id="usr" autocomplete="username">
+    <label for="pwd">Парол</label>
+    <input type="password" id="pwd" autocomplete="current-password">
+    <div class="acts">
+      <button class="btn ghost" value="cancel" type="submit">Бекор</button>
+      <button class="btn" value="ok" type="submit">Кириш</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="katta">
+  <div class="d-hd">
+    <h2 id="kattaSarlavha">—</h2>
+    <button class="ic-btn" id="kattaYop">✕</button>
+  </div>
+  <div class="d-tana" id="kattaTana"></div>
+</dialog>
+
+<script>
+(function () {
+  "use strict";
+
+  var KEY = "buyuk.erp.v1";
+  var ekran = document.getElementById("ekran");
+  var dlg = document.getElementById("dlg");
+  var katta = document.getElementById("katta");
+  var kattaTana = document.getElementById("kattaTana");
+  var kattaSarlavha = document.getElementById("kattaSarlavha");
+  var yon = document.getElementById("yon");
+  var parda = document.getElementById("parda");
+
+  var pane = "dashboard";
+  var davr = "oy";
+  var soralди = false;
+
+  var SARLAVHA = {
+    dashboard: "Дашборд", kunlik: "Кунлик ҳисобот", cheklar: "Чеклар",
+    mahsulot: "Маҳсулотлар", guruh: "Гуруҳлар", sotuvchi: "Сотувчилар", mijoz: "Мижозлар"
+  };
+  var KESIM = { mahsulot: "tovar", guruh: "guruh", sotuvchi: "sotuvchi", mijoz: "mijoz" };
+
+  var lg = document.getElementById("logoRasm");
+  lg.onload = function () {
+    lg.style.display = "block";
+    document.getElementById("logoMatn").style.display = "none";
+  };
+  lg.onerror = function () { lg.remove(); };
+
+  // ── Созламалар ──────────────────────
+  function oqi() {
+    try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) { return {}; }
+  }
+  function yoz(s) { try { localStorage.setItem(KEY, JSON.stringify(s)); } catch (e) {} }
+
+  function ochDialog() {
+    var s = oqi();
+    document.getElementById("usr").value = s.usr || "";
+    document.getElementById("pwd").value = s.pwd || "";
+    dlg.showModal();
+  }
+  document.getElementById("sozlama").addEventListener("click", function () {
+    soralди = false; ochDialog();
+  });
+  dlg.addEventListener("close", function () {
+    if (dlg.returnValue !== "ok") return;
+    yoz({ usr: document.getElementById("usr").value.trim(),
+          pwd: document.getElementById("pwd").value });
+    soralди = false; kimniKorsat(); yukla();
+  });
+  function kimniKorsat() {
+    var n = oqi().usr || "—";
+    document.getElementById("kimNomi").textContent = n;
+    document.getElementById("avatar").textContent = n.charAt(0).toUpperCase() || "?";
+  }
+
+  // ── Ёрдамчилар ──────────────────────
+  function pul(n) {
+    return String(Math.round(Number(n) || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+  }
+  function son(n) {
+    var v = Number(n) || 0;
+    return v % 1 === 0 ? String(v) : String(Math.round(v * 1000) / 1000).replace(".", ",");
+  }
+  function esc(t) {
+    return String(t == null ? "" : t)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+  function rang(m) { return m >= 20 ? "ok" : (m >= 8 ? "warn" : "bad"); }
+  function xato(s, m) {
+    ekran.innerHTML = '<div class="xato"><b>' + esc(s) + "</b>" + esc(m) + "</div>";
+  }
+  function kun(d) {
+    return String(d.getFullYear()) + ("0" + (d.getMonth() + 1)).slice(-2) +
+      ("0" + d.getDate()).slice(-2);
+  }
+  function oraliq() {
+    var b = new Date(), a = new Date();
+    if (davr === "bugun") { /* бугун */ }
+    else if (davr === "hafta") { a.setDate(a.getDate() - 6); }
+    else if (davr === "30") { a.setDate(a.getDate() - 29); }
+    else if (davr === "yil") { a = new Date(b.getFullYear(), 0, 1); }
+    else { a = new Date(b.getFullYear(), b.getMonth(), 1); }
+    return { dan: kun(a), gacha: kun(b) };
+  }
+  function kart(lab, val, klass, qosh, katta_) {
+    return '<div class="kart' + (katta_ ? " katta" : "") + '">' +
+      '<div class="lab">' + esc(lab) + "</div>" +
+      '<div class="val ' + (klass || "") + '">' + val + "</div>" +
+      (qosh ? '<div class="qosh">' + esc(qosh) + "</div>" : "") + "</div>";
+  }
+
+  // ── Сўров ───────────────────────────
+  function sorov(yol) {
+    var s = oqi();
+    if (!s.usr) {
+      xato("Кириш керак", "⚙ тугмасидан фойдаланувчи ва паролни киритинг.");
+      if (!soralди) { soralди = true; ochDialog(); }
+      return Promise.reject(new Error("AUTH_YOQ"));
+    }
+    return fetch("/v1/" + yol, {
+      headers: { "Authorization": "Basic " + btoa(s.usr + ":" + s.pwd) },
+      cache: "no-store"
+    }).then(function (r) {
+      if (r.status === 401) throw new Error("AUTH");
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    }).then(function (j) {
+      if (!j.success) throw new Error(j.message || "Номаълум хатолик");
+      return j.data;
+    });
+  }
+  function xatoniKorsat(e) {
+    if (e.message === "AUTH_YOQ") return;
+    if (e.message === "AUTH") {
+      xato("Кириш рад этилди", "Фойдаланувчи ёки парол нотўғри.");
+      if (!soralди) { soralди = true; ochDialog(); }
+    } else if (e instanceof TypeError) {
+      xato("Сервер жавоб бермади", "Интернетни текширинг.");
+    } else { xato("Хатолик", e.message); }
+  }
+
+  // ── Кунлар блоки ────────────────────
+  function kunlarBlok(k, sarlavha, chegara) {
+    if (!k.length) {
+      return '<div class="blok"><div class="bosh"><div class="em">◌</div>Бу даврда савдо йўқ.</div></div>';
+    }
+    var eng = 0, i;
+    for (i = 0; i < k.length; i++) eng = Math.max(eng, Number(k[i].savdo) || 0);
+
+    var html = '<div class="blok"><div class="hd">' + esc(sarlavha) + "</div>";
+    for (i = 0; i < k.length && (!chegara || i < chegara); i++) {
+      var r = k[i], m = Number(r.marja_foizi) || 0;
+      var u = eng ? Math.round((Number(r.savdo) || 0) / eng * 100) : 0;
+      html += '<div class="qtr"><div class="top">' +
+        '<span class="nm">' + esc(r.kun) + "</span>" +
+        '<span class="fd ' + rang(m) + '">' + pul(r.foyda) + "</span></div>" +
+        '<div class="bot"><span>' + r.cheklar + " чек &nbsp;·&nbsp; савдо " + pul(r.savdo) +
+        "</span><span>" + m.toFixed(1) + "%</span></div>" +
+        '<div class="bar"><i style="width:' + u + '%"></i></div></div>';
+    }
+    return html + "</div>";
+  }
+
+  function dashChiz(d) {
+    var j = d.jami || {}, m = Number(j.marja_foizi) || 0, k = d.kunlar || [];
+    var o = k.length ? k[0] : null;
+    var html = '<div class="kartlar">' +
+      kart("Фойда", pul(j.foyda), rang(m), d.dan + " — " + d.gacha, true) +
+      kart("Савдо", pul(j.savdo)) + kart("Таннарх", pul(j.tannarx)) +
+      kart("Маржа", m.toFixed(1) + "%", rang(m)) +
+      kart("Чеклар", String(j.cheklar || 0)) +
+      kart("Ўртача чек", pul(j.urtacha_chek)) + "</div>";
+
+    if (o) {
+      var om = Number(o.marja_foizi) || 0;
+      html += '<div class="kartlar">' +
+        kart("Сўнгги кун · " + o.kun, pul(o.savdo), "", o.cheklar + " чек", true) +
+        kart("Фойда", pul(o.foyda), rang(om)) +
+        kart("Нақд", pul(o.naqd)) + kart("Карта", pul(o.karta)) + "</div>";
+    }
+    ekran.innerHTML = html + kunlarBlok(k, "Сўнгги кунлар", 10);
+  }
+
+  function kunlikChiz(d) {
+    var j = d.jami || {}, m = Number(j.marja_foizi) || 0;
+    ekran.innerHTML = '<div class="kartlar">' +
+      kart("Фойда", pul(j.foyda), rang(m), d.dan + " — " + d.gacha, true) +
+      kart("Савдо", pul(j.savdo)) + kart("Маржа", m.toFixed(1) + "%", rang(m)) +
+      "</div>" + kunlarBlok(d.kunlar || [], "Кунлар бўйича", 0);
+  }
+
+  // ── Топ рўйхат ──────────────────────
+  function topChiz(sarlavha, bosiladi) {
+    return function (d) {
+      var r = d.royxat || [];
+      var html = '<div class="kartlar">' +
+        kart("Жами савдо", pul(d.jami_savdo), "", d.dan + " — " + d.gacha, true) +
+        kart("Позициялар", String(r.length)) + "</div>";
+
+      if (!r.length) {
+        ekran.innerHTML = html + '<div class="blok"><div class="bosh"><div class="em">◌</div>Маълумот йўқ.</div></div>';
+        return;
+      }
+
+      html += '<div class="blok"><div class="hd">' + esc(sarlavha) +
+        (bosiladi ? " · батафсил учун босинг" : "") + "</div>";
+      for (var i = 0; i < r.length; i++) {
+        var x = r[i], m = Number(x.marja_foizi) || 0;
+        var u = Math.min(100, Number(x.ulush_foizi) || 0);
+        html += '<div class="qtr' + (bosiladi ? " clk" : "") +
+          '" data-nomi="' + esc(x.nomi) + '"><div class="top">' +
+          '<span class="nm">' + esc(x.nomi) + "</span>" +
+          '<span class="fd ' + rang(m) + '">' + pul(x.foyda) + "</span></div>" +
+          '<div class="bot"><span>' + son(x.soni) + " дона &nbsp;·&nbsp; савдо " + pul(x.savdo) +
+          "</span><span>" + m.toFixed(1) + "% &nbsp;·&nbsp; улуш " + u + "%</span></div>" +
+          '<div class="bar"><i class="b2" style="width:' + u + '%"></i></div></div>';
+      }
+      ekran.innerHTML = html + "</div>";
+
+      if (!bosiladi) return;
+      var el = ekran.querySelectorAll(".qtr.clk");
+      for (i = 0; i < el.length; i++) {
+        el[i].addEventListener("click", function () {
+          tovarniOch(this.getAttribute("data-nomi"));
+        });
+      }
+    };
+  }
+
+  // ── Товар батафсил ──────────────────
+  function tovarniOch(nomi) {
+    var o = oraliq();
+    kattaSarlavha.textContent = nomi;
+    kattaTana.innerHTML = '<div class="kut">Юкланмоқда…</div>';
+    katta.showModal();
+
+    sorov("tovar?nomi=" + encodeURIComponent(nomi) + "&dan=" + o.dan + "&gacha=" + o.gacha)
+      .then(function (d) {
+        var j = d.jami || {}, m = Number(j.marja_foizi) || 0;
+        var meta = [d.kodi, d.guruh].filter(Boolean).join(" · ");
+
+        var html = '<div class="kartlar">' +
+          kart("Жами савдо", pul(j.savdo), "", d.dan + " — " + d.gacha, true) +
+          kart("Сотилган", son(j.soni), "", "дона") +
+          kart("Фойда", pul(j.foyda), rang(m)) +
+          kart("Маржа", m.toFixed(1) + "%", rang(m)) +
+          kart("Ўртача нарх", pul(j.urtacha_narx)) +
+          kart("Чеклар", String(j.cheklar || 0), "", meta || null) +
+          "</div>";
+
+        var k = d.kunlar || [];
+        if (k.length) {
+          html += '<div class="blok"><div class="hd">Кунлик сотувлар</div>' +
+            "<table><tr><th>Сана</th><th class=\"r\">Сотилган</th>" +
+            "<th class=\"r\">Сумма</th><th class=\"r\">Фойда</th></tr>";
+          for (var i = 0; i < k.length; i++) {
+            html += "<tr><td>" + esc(k[i].kun) + "</td>" +
+              '<td class="r">' + son(k[i].soni) + "</td>" +
+              '<td class="r pul">' + pul(k[i].savdo) + "</td>" +
+              '<td class="r">' + pul(k[i].foyda) + "</td></tr>";
+          }
+          html += "</table></div>";
+        }
+
+        var a = d.amallar || [];
+        if (a.length) {
+          html += '<div class="blok"><div class="hd">Ҳар бир сотув · ' + a.length + " та</div>" +
+            "<table><tr><th>Сана</th><th>Вақт</th><th class=\"r\">Сони</th>" +
+            "<th>Чек</th><th class=\"r\">Сумма</th></tr>";
+          for (i = 0; i < a.length; i++) {
+            html += "<tr><td class=\"xira\">" + esc(a[i].sana) + "</td>" +
+              "<td>" + esc(a[i].vaqt) + "</td>" +
+              '<td class="r">' + son(a[i].soni) + "</td>" +
+              '<td class="xira">' + esc(a[i].chek) + "</td>" +
+              '<td class="r pul">' + pul(a[i].summa) + "</td></tr>";
+          }
+          html += "</table></div>";
+        }
+
+        if (!k.length && !a.length) {
+          html += '<div class="blok"><div class="bosh"><div class="em">◌</div>Бу даврда сотув йўқ.</div></div>';
+        }
+        kattaTana.innerHTML = html;
+      })
+      .catch(function (e) {
+        kattaTana.innerHTML = '<div class="xato"><b>Хатолик</b>' + esc(e.message) + "</div>";
+      });
+  }
+
+  // ── Чеклар ──────────────────────────
+  function cheklarChiz(d) {
+    var c = d.cheklar || [], jami = 0, foyda = 0, i;
+    for (i = 0; i < c.length; i++) {
+      jami += Number(c[i].summa) || 0;
+      foyda += Number(c[i].foyda) || 0;
+    }
+    var m = jami ? foyda / jami * 100 : 0;
+
+    var html = '<div class="kartlar">' +
+      kart("Савдо", pul(jami), "", d.kun, true) +
+      kart("Фойда", pul(foyda), rang(m)) +
+      kart("Чеклар", String(c.length)) +
+      kart("Ўртача чек", pul(c.length ? jami / c.length : 0)) + "</div>";
+
+    if (!c.length) {
+      ekran.innerHTML = html + '<div class="blok"><div class="bosh"><div class="em">◌</div>Бу кунда чек йўқ.</div></div>';
+      return;
+    }
+
+    html += '<div class="blok"><div class="hd">Чеклар · батафсил учун босинг</div>';
+    for (i = 0; i < c.length; i++) {
+      var r = c[i], t = [];
+      if (r.naqd) t.push("нақд " + pul(r.naqd));
+      if (r.karta) t.push("карта " + pul(r.karta));
+      if (r.ball) t.push("балл " + pul(r.ball));
+      html += '<div class="qtr clk" data-uid="' + esc(r.uid) + '"><div class="top">' +
+        '<span class="nm">' + esc(r.vaqt) + " &nbsp; " + esc(r.sotuvchi || r.mijoz || "—") +
+        (r.qaytarish ? ' <span class="bad">· қайтариш</span>' : "") + "</span>" +
+        '<span class="fd">' + pul(r.summa) + "</span></div>" +
+        '<div class="bot"><span>' + esc(t.join(" · ")) + "</span>" +
+        "<span>фойда " + pul(r.foyda) + "</span></div></div>";
+    }
+    ekran.innerHTML = html + "</div>";
+
+    var el = ekran.querySelectorAll(".qtr.clk");
+    for (i = 0; i < el.length; i++) {
+      el[i].addEventListener("click", function () {
+        chekniOch(this.getAttribute("data-uid"));
+      });
+    }
+  }
+
+  function chekniOch(uid) {
+    kattaSarlavha.textContent = "Чек";
+    kattaTana.innerHTML = '<div class="kut">Юкланмоқда…</div>';
+    katta.showModal();
+    sorov("chek/" + encodeURIComponent(uid)).then(function (d) {
+      kattaSarlavha.textContent = "Чек № " + d.raqam;
+      var m = d.tulov_uchun ? d.foyda / d.tulov_uchun * 100 : 0;
+      var html = '<div class="kartlar">' +
+        kart("Тўлов учун", pul(d.tulov_uchun), "", d.sana + " · " + d.sotuvchi, true) +
+        kart("Фойда", pul(d.foyda), rang(m)) +
+        kart("Маржа", m.toFixed(1) + "%", rang(m)) + "</div>";
+
+      var s = d.satrlar || [];
+      html += '<div class="blok"><div class="hd">Таркиби · ' + s.length + " та</div>" +
+        "<table><tr><th>Товар</th><th class=\"r\">Сони</th><th class=\"r\">Сумма</th></tr>";
+      for (var i = 0; i < s.length; i++) {
+        html += "<tr><td>" + esc(s[i].tovar) + "</td>" +
+          '<td class="r">' + son(s[i].soni) + "</td>" +
+          '<td class="r pul">' + pul(s[i].summa) + "</td></tr>";
+      }
+      kattaTana.innerHTML = html + "</table></div>";
+    }).catch(function (e) {
+      kattaTana.innerHTML = '<div class="xato"><b>Хатолик</b>' + esc(e.message) + "</div>";
+    });
+  }
+
+  document.getElementById("kattaYop").addEventListener("click", function () { katta.close(); });
+
+  // ── Юклаш ───────────────────────────
+  function yukla() {
+    var o = oraliq();
+    ekran.innerHTML = '<div class="kut">Юкланмоқда…</div>';
+    document.getElementById("davrlar").style.display = pane === "cheklar" ? "none" : "flex";
+
+    if (pane === "dashboard") {
+      sorov("hisobot/kunlik?dan=" + o.dan + "&gacha=" + o.gacha).then(dashChiz).catch(xatoniKorsat);
+    } else if (pane === "kunlik") {
+      sorov("hisobot/kunlik?dan=" + o.dan + "&gacha=" + o.gacha).then(kunlikChiz).catch(xatoniKorsat);
+    } else if (pane === "cheklar") {
+      sorov("cheklar?kun=" + o.gacha).then(cheklarChiz).catch(xatoniKorsat);
+    } else {
+      var t = KESIM[pane] || "tovar";
+      sorov("hisobot/top?dan=" + o.dan + "&gacha=" + o.gacha + "&tur=" + t + "&limit=100")
+        .then(topChiz(SARLAVHA[pane], t === "tovar")).catch(xatoniKorsat);
+    }
+  }
+
+  // ── Меню ────────────────────────────
+  function menyuYop() { yon.classList.remove("ochiq"); parda.classList.remove("ochiq"); }
+
+  document.getElementById("menyu").addEventListener("click", function (e) {
+    var a = e.target.closest ? e.target.closest("a") : null;
+    if (!a || a.classList.contains("soon")) return;
+    var p = a.getAttribute("data-p");
+    if (!p) return;
+    var hm = this.querySelectorAll("a");
+    for (var i = 0; i < hm.length; i++) hm[i].classList.toggle("on", hm[i] === a);
+    pane = p;
+    document.getElementById("sarlavha").textContent = SARLAVHA[p] || "—";
+    menyuYop(); yukla();
+  });
+
+  document.getElementById("davrlar").addEventListener("click", function (e) {
+    var v = e.target.getAttribute("data-davr");
+    if (!v) return;
+    davr = v;
+    var b = this.querySelectorAll(".chip");
+    for (var i = 0; i < b.length; i++) b[i].classList.toggle("on", b[i].getAttribute("data-davr") === v);
+    yukla();
+  });
+
+  document.getElementById("yangila").addEventListener("click", yukla);
+  document.getElementById("burger").addEventListener("click", function () {
+    yon.classList.toggle("ochiq"); parda.classList.toggle("ochiq");
+  });
+  parda.addEventListener("click", menyuYop);
+
+  var b = new Date();
+  document.getElementById("bugun").textContent =
+    b.getFullYear() + "-" + ("0" + (b.getMonth() + 1)).slice(-2) + "-" + ("0" + b.getDate()).slice(-2);
+
+  kimniKorsat();
+  if (!oqi().usr) { soralди = true; ochDialog(); } else { yukla(); }
+})();
+</script>
+</body>
+</html>
