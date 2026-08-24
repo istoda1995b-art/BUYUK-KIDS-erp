@@ -1660,7 +1660,14 @@ async def sayt():
             status_code=404,
             content={"success": False, "message": "index.html топилмади", "data": {}},
         )
-    return FileResponse(SAYT, media_type="text/html; charset=utf-8")
+    # no-cache: браузер сахифани кэшлайди, лекин ҲАР САФАР сервердан
+    # "ўзгардими?" деб сўрайди. Деплойдан кейин янги нусхани дарҳол олади —
+    # телефон эски (кэшланган) саҳифада қотиб қолмайди.
+    return FileResponse(
+        SAYT,
+        media_type="text/html; charset=utf-8",
+        headers={"Cache-Control": "no-cache, must-revalidate"},
+    )
 
 
 @app.get("/favicon.ico", include_in_schema=False)
