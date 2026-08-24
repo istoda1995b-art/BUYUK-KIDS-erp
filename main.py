@@ -13,6 +13,8 @@ Buyuk Kids — ERP сервер
 Аутентификация: HTTP Basic (1С ҳам, сайт ҳам).
 """
 
+import hashlib
+import hmac
 import logging
 import os
 import secrets
@@ -108,9 +110,46 @@ def _foydalanuvchilar() -> dict[str, dict[str, str]]:
 
 FOYDALANUVCHILAR = _foydalanuvchilar()
 
+# Сайт (админ панел) орқали қўшилган фойдаланувчилар — базада сақланади,
+# лекин тезкорлик учун хотирада ҳам тутиб турилади (starty да юкланади,
+# қўшилган/ўчирилганда шу ерда ҳам янгиланади). ERP_USERS'дагилардан фарқли —
+# уларни сайтдан ўчириш ёки қўшиш мумкин.
+DB_FOYDALANUVCHILAR: dict[str, dict[str, str]] = {}
+
+# Сайтдан қўшиладиган фойдаланувчиларга рухсат этилган роллар.
+# "onec" фақат 1С синхронизацияси учун, ERP_USERS орқали қўшилади.
+SAYT_ROLLARI = ("admin", "yordamchi")
+
+
+def parol_hash(parol: str) -> str:
+    tuz = secrets.token_hex(16)
+    dk = hashlib.pbkdf2_hmac("sha256", parol.encode("utf-8"), tuz.encode("ascii"), 200_000)
+    return f"{tuz}${dk.hex()}"
+
+
+def parol_tekshir(parol: str, saqlangan: str) -> bool:
+    try:
+        tuz, kutilgan = saqlangan.split("$", 1)
+    except ValueError:
+        return False
+    dk = hashlib.pbkdf2_hmac("sha256", parol.encode("utf-8"), tuz.encode("ascii"), 200_000)
+    return hmac.compare_digest(dk.hex(), kutilgan)
+
+
+def foydalanuvchi_topish(nom: str) -> dict[str, str] | None:
+    """ERP_USERS (Railway) ва сайтдан қўшилганлар — иккаласини ҳам текширади."""
+    yozuv = FOYDALANUVCHILAR.get(nom)
+    if yozuv:
+        return {"parol": yozuv["parol"], "rol": yozuv["rol"], "manba": "env"}
+    yozuv = DB_FOYDALANUVCHILAR.get(nom)
+    if yozuv:
+        return {"parol_hash": yozuv["parol_hash"], "rol": yozuv["rol"], "manba": "sayt"}
+    return None
+
+
 # Рол → рухсат этилган бўлимлар. admin учун чекланиш йўқ.
 ROL_BOLIMLARI = {
-    "yordamchi": ["cheklar", "mahsulot", "inv", "kirim"],
+    "yordamchi": ["cheklar", "mahsulot", "tovarqidir", "inv", "kirim"],
     "onec": [],
 }
 
@@ -120,7 +159,8 @@ FAQAT_ADMIN = {"hisobot_kunlik", "hisobot_top_kesim"}
 
 
 def rol_ol(kim: str) -> str:
-    return FOYDALANUVCHILAR.get(kim, {}).get("rol", "admin")
+    yozuv = foydalanuvchi_topish(kim)
+    return yozuv["rol"] if yozuv else "admin"
 
 
 def admin_kerak(kim: str) -> None:
@@ -280,6 +320,20 @@ class SyncState(Base):
     )
 
 
+class AppUser(Base):
+    """Сайт (админ панел) орқали қўшилган фойдаланувчилар."""
+
+    __tablename__ = "app_users"
+
+    nom: Mapped[str] = mapped_column(String(50), primary_key=True)
+    parol_hash: Mapped[str] = mapped_column(String(200))
+    rol: Mapped[str] = mapped_column(String(20), default="yordamchi")
+    yaratgan: Mapped[str] = mapped_column(String(50), default="")
+    yaratildi: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
 # ─────────────────────────── Хавфсизлик ───────────────────────────
 
 basic = HTTPBasic(auto_error=True)
@@ -287,9 +341,14 @@ basic = HTTPBasic(auto_error=True)
 
 def check_auth(c: HTTPBasicCredentials = Depends(basic)) -> str:
     # Номи топилмаса ҳам вақт бир хил кетсин — ном таxмин қилинмасин
-    yozuv = FOYDALANUVCHILAR.get(c.username)
-    kutilgan = yozuv["parol"] if yozuv else ""
-    mos = secrets.compare_digest(c.password, kutilgan) if kutilgan else False
+    yozuv = foydalanuvchi_topish(c.username)
+    if yozuv and yozuv.get("manba") == "env":
+        mos = secrets.compare_digest(c.password, yozuv["parol"])
+    elif yozuv:
+        mos = parol_tekshir(c.password, yozuv["parol_hash"])
+    else:
+        secrets.compare_digest(c.password, "")  # тахминий вақт учун
+        mos = False
     if not mos:
         log.warning("Кириш рад этилди: %s", c.username[:40])
         raise HTTPException(
@@ -414,8 +473,17 @@ async def unhandled(request: Request, exc: Exception) -> JSONResponse:
 async def startup() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    log.info("ERP сервер тайёр. Фойдаланувчилар: %s",
-             ", ".join(f"{n} ({v['rol']})" for n, v in sorted(FOYDALANUVCHILAR.items())))
+    async with Session() as s:
+        rows = (await s.execute(select(AppUser))).scalars().all()
+        for r in rows:
+            DB_FOYDALANUVCHILAR[r.nom] = {"parol_hash": r.parol_hash, "rol": r.rol}
+    log.info(
+        "ERP сервер тайёр. Фойдаланувчилар: %s",
+        ", ".join(
+            f"{n} ({v['rol']})"
+            for n, v in sorted({**FOYDALANUVCHILAR, **DB_FOYDALANUVCHILAR}.items())
+        ),
+    )
 
 
 @app.get("/health")
@@ -813,13 +881,88 @@ async def chek(uid: str, session: AsyncSession = Depends(get_session)) -> dict:
 
 @app.get("/v1/men", dependencies=guard)
 async def men(kim: str = Depends(check_auth)) -> dict:
-    yozuv = FOYDALANUVCHILAR.get(kim, {})
-    rol = yozuv.get("rol", "admin")
+    rol = rol_ol(kim)
     return javob({
         "nom": kim,
         "rol": rol,
         "bolimlar": ROL_BOLIMLARI.get(rol),  # None → чекланиш йўқ
     })
+
+
+# ── Сайт: фойдаланувчилар (админ панел) ───────────────
+
+
+class FoydalanuvchiIn(BaseModel):
+    nom: str = Field(min_length=2, max_length=50)
+    parol: str = Field(min_length=4, max_length=100)
+    rol: str = Field(default="yordamchi", max_length=20)
+
+
+@app.get("/v1/foydalanuvchilar", dependencies=guard)
+async def foydalanuvchilar_royxat(kim: str = Depends(check_auth)) -> dict:
+    admin_kerak(kim)
+    royxat = [
+        {"nom": n, "rol": v["rol"], "manba": "env", "ochirish_mumkin": False}
+        for n, v in sorted(FOYDALANUVCHILAR.items())
+    ] + [
+        {"nom": n, "rol": v["rol"], "manba": "sayt", "ochirish_mumkin": True}
+        for n, v in sorted(DB_FOYDALANUVCHILAR.items())
+    ]
+    return javob({"royxat": royxat})
+
+
+@app.post("/v1/foydalanuvchilar", dependencies=guard)
+async def foydalanuvchi_qoshish(
+    payload: FoydalanuvchiIn,
+    kim: str = Depends(check_auth),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    admin_kerak(kim)
+    nom = payload.nom.strip()
+
+    if not nom or not all(ch.isalnum() or ch in "_." for ch in nom):
+        raise HTTPException(
+            status_code=400, detail="Логин фақат ҳарф, рақам, _ ва . дан иборат бўлсин"
+        )
+    if payload.rol not in SAYT_ROLLARI:
+        raise HTTPException(
+            status_code=400,
+            detail="Рол " + " ёки ".join(SAYT_ROLLARI) + " бўлиши керак",
+        )
+    if foydalanuvchi_topish(nom):
+        raise HTTPException(status_code=400, detail="Бу логин банд")
+
+    yozuv = AppUser(
+        nom=nom, parol_hash=parol_hash(payload.parol), rol=payload.rol, yaratgan=kim
+    )
+    session.add(yozuv)
+    await session.commit()
+
+    DB_FOYDALANUVCHILAR[nom] = {"parol_hash": yozuv.parol_hash, "rol": yozuv.rol}
+    log.info("Янги фойдаланувчи қўшилди: %s (%s), қўшди: %s", nom, payload.rol, kim)
+    return javob({"nom": nom, "rol": payload.rol})
+
+
+@app.delete("/v1/foydalanuvchilar/{nom}", dependencies=guard)
+async def foydalanuvchi_ochirish(
+    nom: str,
+    kim: str = Depends(check_auth),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    admin_kerak(kim)
+    if nom not in DB_FOYDALANUVCHILAR:
+        raise HTTPException(
+            status_code=404,
+            detail="Топилмади (Railway'дан қўшилган бўлса, бу ердан ўчирилмайди)",
+        )
+    if nom == kim:
+        raise HTTPException(status_code=400, detail="Ўзингизни ўчира олмайсиз")
+
+    await session.execute(delete(AppUser).where(AppUser.nom == nom))
+    await session.commit()
+    DB_FOYDALANUVCHILAR.pop(nom, None)
+    log.info("Фойдаланувчи ўчирилди: %s, ўчирди: %s", nom, kim)
+    return javob({"nom": nom})
 
 
 # ── 1С: қолдиқ юбориш ─────────────────────────────────
@@ -1287,13 +1430,33 @@ async def navbat_natija(
 
 @app.get("/v1/tovar", dependencies=guard)
 async def tovar_hisoboti(
-    nomi: str = Query(..., min_length=1, max_length=300),
+    nomi: str | None = Query(None, max_length=300),
+    shk: str | None = Query(None, max_length=30),
     dan: str | None = Query(None),
     gacha: str | None = Query(None),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
+    nomi = (nomi or "").strip()
+    shk = (shk or "").strip()
+    if not nomi and not shk:
+        raise HTTPException(status_code=400, detail="nomi ёки shk керак")
+
+    # Штрих код (ёки товар коди) бўйича — аввал номини топамиз
+    if not nomi:
+        topilgan = (
+            await session.execute(
+                text(
+                    "SELECT tovar FROM stock WHERE shk = :shk OR tovar_kodi = :shk LIMIT 1"
+                ),
+                {"shk": shk},
+            )
+        ).first()
+        if not topilgan:
+            raise HTTPException(status_code=404, detail="Товар топилмади: " + shk)
+        nomi = topilgan.tovar
+
     bugun = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-    d1 = kun_oqi(dan, bugun.replace(day=1))
+    d1 = kun_oqi(dan, bugun)
     d2 = kun_oqi(gacha, bugun) + timedelta(days=1)
 
     # Жами
@@ -1376,6 +1539,45 @@ async def tovar_hisoboti(
         )
     ).first()
 
+    # Қолдиқ — жорий, омборлар кесимида (даврга боғлиқ эмас)
+    qoldiq_rows = (
+        await session.execute(
+            text(
+                """
+                SELECT ombor, soni, tannarx, sotish_narxi, shk, tovar_kodi
+                FROM stock
+                WHERE tovar = :nomi
+                ORDER BY ombor
+                """
+            ),
+            {"nomi": nomi},
+        )
+    ).all()
+
+    # Кирим — фақат шу сайт орқали 1С га юборилган топшириқлар
+    # (1С ҳозирча тўлиқ кирим тарихини серверга юбормайди, фақат жорий қолдиқни)
+    kirim_rows = (
+        await session.execute(
+            text(
+                """
+                SELECT n.id, n.holat, n.hujjat_raqami, n.natija,
+                       (n.yaratildi AT TIME ZONE 'Asia/Tashkent') AS yaratildi,
+                       COALESCE((el->>'soni')::numeric, 0)  AS soni,
+                       COALESCE((el->>'narxi')::numeric, 0) AS narxi,
+                       COALESCE((n.tana->>'taminotchi'), '') AS taminotchi
+                FROM navbat n, jsonb_array_elements(COALESCE(n.tana->'satrlar', '[]'::jsonb)) AS el
+                WHERE n.turi = 'kirim'
+                  AND el->>'tovar' = :nomi
+                  AND (n.yaratildi AT TIME ZONE 'Asia/Tashkent') >= :d1
+                  AND (n.yaratildi AT TIME ZONE 'Asia/Tashkent') < :d2
+                ORDER BY n.yaratildi DESC
+                LIMIT 200
+                """
+            ),
+            {"nomi": nomi, "d1": d1, "d2": d2},
+        )
+    ).all()
+
     return javob(
         {
             "nomi": nomi,
@@ -1413,6 +1615,32 @@ async def tovar_hisoboti(
                     "sotuvchi": r.sotuvchi,
                 }
                 for r in amallar_rows
+            ],
+            "qoldiq": {
+                "jami": round(sum(float(r.soni or 0) for r in qoldiq_rows), 3),
+                "ombor": [
+                    {
+                        "ombor": r.ombor,
+                        "soni": round(float(r.soni or 0), 3),
+                        "tannarx": round(float(r.tannarx or 0)),
+                        "sotish_narxi": round(float(r.sotish_narxi or 0)),
+                    }
+                    for r in qoldiq_rows
+                ],
+                "shk": (qoldiq_rows[0].shk if qoldiq_rows else "") or "",
+                "kodi": (qoldiq_rows[0].tovar_kodi if qoldiq_rows else "") or "",
+            },
+            "kirim": [
+                {
+                    "id": r.id,
+                    "sana": r.yaratildi.strftime("%Y-%m-%d %H:%M") if r.yaratildi else "",
+                    "soni": round(float(r.soni or 0), 3),
+                    "narxi": round(float(r.narxi or 0)),
+                    "holat": r.holat,
+                    "hujjat_raqami": r.hujjat_raqami,
+                    "taminotchi": r.taminotchi,
+                }
+                for r in kirim_rows
             ],
         }
     )
