@@ -1360,10 +1360,17 @@ async def kirim_yuborish(
 # Валюта/курс сайтда қўлланади — бу ерда фақат ажратиб берамиз.
 
 _TOVAR_USTUN = ("tovar", "товар", "наименование", "номи", "nomi", "mahsulot",
-                "маҳсулот", "название", "tovar nomi", "наимен")
+                "маҳсулот", "название", "tovar nomi", "наимен", "описание")
 _SONI_USTUN = ("soni", "сони", "количество", "кол-во", "кол", "qty", "miqdor",
                "миқдор", "son")
-_NARX_USTUN = ("narx", "нарх", "цена", "narxi", "нархи", "price", "summa narx")
+_NARX_USTUN = ("narx", "нарх", "цена", "narxi", "нархи", "price")
+# Товар жадвали тугаганини билдирувчи (итого, имзо жойлари, сумма прописью)
+_STOP_SATR = ("итого", "жами", "всего", "total", "директор", "отправил",
+              "принял", "получатель", "дата", "м.п", "мп:", "бухгалтер",
+              "сумма прописью")
+# Excel'дан таъминотчи номини топиш учун
+_TAMIN_KALIT = ("поставщик", "таъминотчи", "таминотчи", "firma", "фирма",
+                "продавец", "отправитель", "sotuvchi", "sotib olindi")
 
 
 def _raqam(v: Any) -> float:
@@ -1394,19 +1401,42 @@ def _raqam(v: Any) -> float:
         return 0.0
 
 
-def _excel_satrlar(bayt: bytes) -> list[dict]:
-    """Excel'дан сатрларни ажратади. Сарлавҳа қаторини топиб, устунларни мослайди."""
+def _excel_taminotchi(qatorlar: list) -> str:
+    """Excel'нинг тепа қисмидан таъминотчи (поставщик) номини топади."""
+    for qat in qatorlar[:12]:
+        for katak in qat:
+            s = str(katak).strip()
+            past = s.lower()
+            for kalit in _TAMIN_KALIT:
+                p = past.find(kalit)
+                if p >= 0:
+                    # "Поставщик: Склад" → ":" дан кейинги қисм
+                    qism = s[p + len(kalit):].lstrip(" :=\t")
+                    qism = qism.strip()
+                    if qism and qism.lower() not in ("", "получатель"):
+                        return qism[:200]
+    return ""
+
+
+def _excel_satrlar(bayt: bytes) -> dict:
+    """Excel'дан сатрлар ва таъминотчини ажратади.
+
+    МУҲИМ: read_only=False — баъзи файллар ўз ўлчамини нотўғри ('A1') ёзади,
+    read_only режими шунга ишониб бўш ўқийди. Оддий режим ҳамма қаторни олади.
+    """
     from openpyxl import load_workbook
-    wb = load_workbook(io.BytesIO(bayt), read_only=True, data_only=True)
+    wb = load_workbook(io.BytesIO(bayt), read_only=False, data_only=True)
     ws = wb.active
     qatorlar = [[c if c is not None else "" for c in row]
                 for row in ws.iter_rows(values_only=True)]
     if not qatorlar:
-        return []
+        return {"satrlar": [], "taminotchi": ""}
+
+    taminotchi = _excel_taminotchi(qatorlar)
 
     # Сарлавҳа қаторини топамиз (товар/сони/нарх устунлари бор қатор)
     sarlavha_idx, xarita = None, {}
-    for i, qat in enumerate(qatorlar[:15]):
+    for i, qat in enumerate(qatorlar[:30]):
         past = [str(c).strip().lower() for c in qat]
         x = {}
         for j, katak in enumerate(past):
@@ -1414,7 +1444,7 @@ def _excel_satrlar(bayt: bytes) -> list[dict]:
                 continue
             if "tovar" not in x and any(k in katak for k in _TOVAR_USTUN):
                 x["tovar"] = j
-            elif "soni" not in x and any(k in katak for k in _SONI_USTUN):
+            elif "soni" not in x and "изм" not in katak and any(k in katak for k in _SONI_USTUN):
                 x["soni"] = j
             elif "narxi" not in x and any(k in katak for k in _NARX_USTUN):
                 x["narxi"] = j
@@ -1428,41 +1458,53 @@ def _excel_satrlar(bayt: bytes) -> list[dict]:
             nom = str(qat[xarita["tovar"]]).strip() if xarita["tovar"] < len(qat) else ""
             if not nom:
                 continue
+            if any(nom.lower().startswith(s) for s in _STOP_SATR):
+                break   # "Итого" ва пастки имзо қисмига етдик
             soni = _raqam(qat[xarita["soni"]]) if xarita.get("soni") is not None and xarita["soni"] < len(qat) else 0
             narxi = _raqam(qat[xarita["narxi"]]) if xarita.get("narxi") is not None and xarita["narxi"] < len(qat) else 0
+            if soni <= 0 and narxi <= 0:
+                continue   # имзо/изоҳ каби бўш сатрлар
             satrlar.append({"tovar": nom, "soni": soni or 1, "narxi": narxi})
-    return satrlar
+    return {"satrlar": satrlar, "taminotchi": taminotchi}
 
 
-async def _openai_ocr_satrlar(bayt: bytes, mime: str) -> list[dict]:
-    """Расм чекни OpenAI vision билан ўқиб, сатрларни JSON қилиб қайтаради."""
+def _excel_matn(bayt: bytes) -> str:
+    """Excel'ни матн кўринишига келтиради (AI fallback учун)."""
+    from openpyxl import load_workbook
+    wb = load_workbook(io.BytesIO(bayt), read_only=False, data_only=True)
+    ws = wb.active
+    satrlar = []
+    for row in ws.iter_rows(values_only=True):
+        kataklar = [str(c).strip() for c in row if c is not None and str(c).strip()]
+        if kataklar:
+            satrlar.append(" | ".join(kataklar))
+    return "\n".join(satrlar[:200])
+
+
+_AI_KORSATMA = (
+    "Bu — do'kon uchun kirim (приход) tovar cheki yoki nakladnoy (расм ёки матн). "
+    "Undagi tovarlarni o'qib chiqar. FAQAT JSON qaytar, boshqa gap yozma. "
+    "Format: {\"taminotchi\":\"...\",\"valyuta\":\"sum|usd\","
+    "\"satrlar\":[{\"tovar\":\"nomi\",\"soni\":son,\"narxi\":son}]}. "
+    "narxi — bir dona narxi (agar chekда faqat jami bo'lsa, jami/soni qil). "
+    "Итого/жами/имзо қаторларини товар деб олма. "
+    "Raqamlarни toza son qil (probel/vergulсiz). Taminotchi (поставщик) yoki "
+    "valyuta ko'rinmаса, bo'sh qoldir."
+)
+
+
+async def _openai_yubor(content: Any) -> dict:
+    """OpenAI chat completions'га юборади ва JSON натижани қайтаради."""
     if not OPENAI_API_KEY:
         raise HTTPException(
             status_code=400,
-            detail="Расмни ўқиш учун OPENAI_API_KEY созланмаган. Railway'да қўшинг "
-                   "(Excel файл калитсиз ишлайди).",
+            detail="OPENAI_API_KEY созланмаган. Railway'да қўшинг "
+                   "(оддий Excel файллар калитсиз ҳам ишлайди).",
         )
-    b64 = base64.b64encode(bayt).decode("ascii")
-    korsatma = (
-        "Bu — do'kon uchun kirim (приход) tovar cheki yoki nakladnoy rasmi. "
-        "Undagi tovarlarni o'qib chiqar. FAQAT JSON qaytar, boshqa gap yozma. "
-        "Format: {\"taminotchi\":\"...\",\"valyuta\":\"sum|usd\","
-        "\"satrlar\":[{\"tovar\":\"nomi\",\"soni\":son,\"narxi\":son}]}. "
-        "narxi — bir dona narxi (agar chekда faqat jami bo'lsa, jami/soni qil). "
-        "Raqamlarни toza son qil (probel/vergulсiz). Taminotchi yoki valyuta "
-        "ko'rinmаса, bo'sh qoldir."
-    )
     payload = {
         "model": OPENAI_MODEL,
         "max_tokens": 4000,
-        "messages": [{
-            "role": "user",
-            "content": [
-                {"type": "text", "text": korsatma},
-                {"type": "image_url",
-                 "image_url": {"url": f"data:{mime};base64,{b64}"}},
-            ],
-        }],
+        "messages": [{"role": "user", "content": content}],
     }
     try:
         async with httpx.AsyncClient(timeout=90) as klient:
@@ -1472,13 +1514,26 @@ async def _openai_ocr_satrlar(bayt: bytes, mime: str) -> list[dict]:
             )
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"AI'га уланиб бўлмади: {e}")
-
     if r.status_code != 200:
-        qisqa = r.text[:200]
-        raise HTTPException(status_code=502, detail=f"AI хатоси ({r.status_code}): {qisqa}")
+        raise HTTPException(status_code=502,
+                            detail=f"AI хатоси ({r.status_code}): {r.text[:200]}")
+    return _json_satrlar_ajrat(r.json()["choices"][0]["message"]["content"])
 
-    matn = r.json()["choices"][0]["message"]["content"]
-    return _json_satrlar_ajrat(matn)
+
+async def _openai_ocr_satrlar(bayt: bytes, mime: str) -> dict:
+    """Расм чекни OpenAI vision билан ўқийди."""
+    b64 = base64.b64encode(bayt).decode("ascii")
+    return await _openai_yubor([
+        {"type": "text", "text": _AI_KORSATMA},
+        {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}},
+    ])
+
+
+async def _openai_matn_satrlar(matn: str) -> dict:
+    """Excel матнини AI билан таҳлил қилади (оддий парсер топа олмаганда)."""
+    return await _openai_yubor(
+        _AI_KORSATMA + "\n\nМана чек/накладной матни:\n" + matn
+    )
 
 
 def _json_satrlar_ajrat(matn: str) -> list[dict]:
@@ -1558,8 +1613,22 @@ async def kirim_analyze(
 
     taminotchi_taxmin, valyuta_taxmin = "", ""
     if nom.endswith((".xlsx", ".xlsm", ".xls")) or "sheet" in mime or "excel" in mime:
-        xom_satrlar = _excel_satrlar(bayt)
         manba = "excel"
+        try:
+            ex = _excel_satrlar(bayt)
+        except Exception as e:
+            log.warning("Excel ўқишда хато: %s", e)
+            ex = {"satrlar": [], "taminotchi": ""}
+        xom_satrlar = ex["satrlar"]
+        taminotchi_taxmin = ex.get("taminotchi", "")
+        # Оддий парсер топа олмаса — AI билан уринамиз (калит бор бўлса)
+        if not xom_satrlar and OPENAI_API_KEY:
+            manba = "excel+ai"
+            natija = await _openai_matn_satrlar(_excel_matn(bayt))
+            xom_satrlar = natija["satrlar"]
+            if not taminotchi_taxmin:
+                taminotchi_taxmin = natija.get("taminotchi", "")
+            valyuta_taxmin = natija.get("valyuta", "")
     elif mime.startswith("image/") or nom.endswith((".png", ".jpg", ".jpeg", ".webp", ".gif")):
         if not mime.startswith("image/"):
             mime = "image/jpeg"
