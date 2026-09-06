@@ -1497,6 +1497,8 @@ dialog::backdrop { background: rgba(20,30,20,.5); }
             qoshildi++;
           }
           finp.value = "";
+          // Титраш — ўқилганини сезиш учун (телефон қўллаб-қувватласа)
+          if (navigator.vibrate) { try { navigator.vibrate([40, 40, 40]); } catch (e) {} }
           kirimYukla();
           // kirimYukla қайта чизгач, ҳолатни кўрсатиш учун кечиктирамиз
           setTimeout(function () {
@@ -1610,6 +1612,7 @@ dialog::backdrop { background: rgba(20,30,20,.5); }
           taminotchi: kirimTaminotchi, taminotchi_uid: kirimTaminotchiUid,
           ombor: "", izoh: kirimIzoh, satrlar: satrlar
         }).then(function () {
+          if (navigator.vibrate) { try { navigator.vibrate(80); } catch (e) {} }
           kirimSavat = []; kirimIzoh = ""; kirimYukla();
         }).catch(function (e) {
           yb.disabled = false; yb.textContent = "1С га юбориш";
