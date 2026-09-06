@@ -13,16 +13,21 @@ Buyuk Kids — ERP сервер
 Аутентификация: HTTP Basic (1С ҳам, сайт ҳам).
 """
 
+import base64
 import hashlib
 import hmac
+import io
+import json
 import logging
 import os
+import re
 import secrets
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any
 
-from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
+import httpx
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pydantic import BaseModel, Field
@@ -168,6 +173,12 @@ def admin_kerak(kim: str) -> None:
         raise HTTPException(status_code=403, detail="Бу бўлимга рухсат йўқ")
 # 1С биринчи марта уланганда шунча кун орқага қайтиб юборади
 BOSHLANGICH_KUN = int(os.getenv("BOSHLANGICH_KUN", "30"))
+
+# ── AI (чек/накладнойни ўқиш) ─────────────────────────
+# OPENAI_API_KEY — расм (фото) чекларни ўқиш учун. Excel калитсиз ўқилади.
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini").strip() or "gpt-4o-mini"
+OPENAI_URL = "https://api.openai.com/v1/chat/completions"
 
 engine = create_async_engine(DATABASE_URL, pool_pre_ping=True, pool_size=5, max_overflow=5)
 Session = async_sessionmaker(engine, expire_on_commit=False)
@@ -1282,9 +1293,11 @@ class KirimSatrIn(BaseModel):
     tovar_uid: str = Field(default="", max_length=50)
     shk: str = Field(default="", max_length=30)
     tovar: str = Field(default="", max_length=300)
+    guruh: str = Field(default="", max_length=200)   # янги товар учун гуруҳ (примечание)
     soni: float = 0
-    narxi: float = 0          # кирим нархи
+    narxi: float = 0          # кирим нархи (СЎМда — сайт валютадан ўтказиб юборади)
     sotish_narxi: float = 0   # 0 бўлса — 1С эскисини қолдиради
+    yangi: bool = False       # 1С да топилмаган — янги номенклатура яратилади
 
 
 class KirimIn(BaseModel):
@@ -1318,9 +1331,11 @@ async def kirim_yuborish(
                     "tovar_uid": x.tovar_uid,
                     "shk": x.shk,
                     "tovar": x.tovar,
+                    "guruh": (x.guruh or "").strip(),
                     "soni": round(float(x.soni or 0), 3),
                     "narxi": pul(x.narxi),
                     "sotish_narxi": pul(x.sotish_narxi),
+                    "yangi": bool(x.yangi),
                 }
                 for x in payload.satrlar
             ],
@@ -1330,8 +1345,253 @@ async def kirim_yuborish(
     await session.commit()
     await session.refresh(n)
 
-    log.info("Навбатга қўшилди: кирим #%s, %s сатр", n.id, len(payload.satrlar))
+    yangi_soni = sum(1 for x in payload.satrlar if x.yangi)
+    log.info("Навбатга қўшилди: кирим #%s, %s сатр (%s янги)",
+             n.id, len(payload.satrlar), yangi_soni)
     return javob({"id": n.id, "holat": n.holat, "satrlar": len(payload.satrlar)})
+
+
+# ── Сайт: кирим — файлдан ўқиш (AI / Excel) ───────────
+#
+# Расм (фото) чек  → OpenAI vision билан ўқилади (OPENAI_API_KEY керак).
+# Excel (.xlsx)    → калитсиз, оддий код билан ўқилади (бепул).
+#
+# Натижа: ажратилган сатрлар + улар базада бор-йўқлиги (yangi белгиси).
+# Валюта/курс сайтда қўлланади — бу ерда фақат ажратиб берамиз.
+
+_TOVAR_USTUN = ("tovar", "товар", "наименование", "номи", "nomi", "mahsulot",
+                "маҳсулот", "название", "tovar nomi", "наимен")
+_SONI_USTUN = ("soni", "сони", "количество", "кол-во", "кол", "qty", "miqdor",
+               "миқдор", "son")
+_NARX_USTUN = ("narx", "нарх", "цена", "narxi", "нархи", "price", "summa narx")
+
+
+def _raqam(v: Any) -> float:
+    """'12 500,50' / '12,500.50' / '1 200' кабиларни сонга ўтказади."""
+    if v is None:
+        return 0.0
+    if isinstance(v, (int, float)):
+        return float(v)
+    s = str(v).strip()
+    if not s:
+        return 0.0
+    s = re.sub(r"[^\d,.\-]", "", s)          # рақам, вергул, нуқта, минус қолсин
+    if "," in s and "." in s:
+        # қайси бири ўнлик? — охиргиси ўнлик деб оламиз
+        if s.rfind(",") > s.rfind("."):
+            s = s.replace(".", "").replace(",", ".")
+        else:
+            s = s.replace(",", "")
+    elif "," in s:
+        # вергул: минглик ажратгичми ёки ўнликми?
+        if len(s.split(",")[-1]) == 3 and s.count(",") >= 1:
+            s = s.replace(",", "")
+        else:
+            s = s.replace(",", ".")
+    try:
+        return float(s)
+    except ValueError:
+        return 0.0
+
+
+def _excel_satrlar(bayt: bytes) -> list[dict]:
+    """Excel'дан сатрларни ажратади. Сарлавҳа қаторини топиб, устунларни мослайди."""
+    from openpyxl import load_workbook
+    wb = load_workbook(io.BytesIO(bayt), read_only=True, data_only=True)
+    ws = wb.active
+    qatorlar = [[c if c is not None else "" for c in row]
+                for row in ws.iter_rows(values_only=True)]
+    if not qatorlar:
+        return []
+
+    # Сарлавҳа қаторини топамиз (товар/сони/нарх устунлари бор қатор)
+    sarlavha_idx, xarita = None, {}
+    for i, qat in enumerate(qatorlar[:15]):
+        past = [str(c).strip().lower() for c in qat]
+        x = {}
+        for j, katak in enumerate(past):
+            if not katak:
+                continue
+            if "tovar" not in x and any(k in katak for k in _TOVAR_USTUN):
+                x["tovar"] = j
+            elif "soni" not in x and any(k in katak for k in _SONI_USTUN):
+                x["soni"] = j
+            elif "narxi" not in x and any(k in katak for k in _NARX_USTUN):
+                x["narxi"] = j
+        if "tovar" in x and ("soni" in x or "narxi" in x):
+            sarlavha_idx, xarita = i, x
+            break
+
+    satrlar = []
+    if sarlavha_idx is not None:
+        for qat in qatorlar[sarlavha_idx + 1:]:
+            nom = str(qat[xarita["tovar"]]).strip() if xarita["tovar"] < len(qat) else ""
+            if not nom:
+                continue
+            soni = _raqam(qat[xarita["soni"]]) if xarita.get("soni") is not None and xarita["soni"] < len(qat) else 0
+            narxi = _raqam(qat[xarita["narxi"]]) if xarita.get("narxi") is not None and xarita["narxi"] < len(qat) else 0
+            satrlar.append({"tovar": nom, "soni": soni or 1, "narxi": narxi})
+    return satrlar
+
+
+async def _openai_ocr_satrlar(bayt: bytes, mime: str) -> list[dict]:
+    """Расм чекни OpenAI vision билан ўқиб, сатрларни JSON қилиб қайтаради."""
+    if not OPENAI_API_KEY:
+        raise HTTPException(
+            status_code=400,
+            detail="Расмни ўқиш учун OPENAI_API_KEY созланмаган. Railway'да қўшинг "
+                   "(Excel файл калитсиз ишлайди).",
+        )
+    b64 = base64.b64encode(bayt).decode("ascii")
+    korsatma = (
+        "Bu — do'kon uchun kirim (приход) tovar cheki yoki nakladnoy rasmi. "
+        "Undagi tovarlarni o'qib chiqar. FAQAT JSON qaytar, boshqa gap yozma. "
+        "Format: {\"taminotchi\":\"...\",\"valyuta\":\"sum|usd\","
+        "\"satrlar\":[{\"tovar\":\"nomi\",\"soni\":son,\"narxi\":son}]}. "
+        "narxi — bir dona narxi (agar chekда faqat jami bo'lsa, jami/soni qil). "
+        "Raqamlarни toza son qil (probel/vergulсiz). Taminotchi yoki valyuta "
+        "ko'rinmаса, bo'sh qoldir."
+    )
+    payload = {
+        "model": OPENAI_MODEL,
+        "max_tokens": 4000,
+        "messages": [{
+            "role": "user",
+            "content": [
+                {"type": "text", "text": korsatma},
+                {"type": "image_url",
+                 "image_url": {"url": f"data:{mime};base64,{b64}"}},
+            ],
+        }],
+    }
+    try:
+        async with httpx.AsyncClient(timeout=90) as klient:
+            r = await klient.post(
+                OPENAI_URL, json=payload,
+                headers={"Authorization": f"Bearer {OPENAI_API_KEY}"},
+            )
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"AI'га уланиб бўлмади: {e}")
+
+    if r.status_code != 200:
+        qisqa = r.text[:200]
+        raise HTTPException(status_code=502, detail=f"AI хатоси ({r.status_code}): {qisqa}")
+
+    matn = r.json()["choices"][0]["message"]["content"]
+    return _json_satrlar_ajrat(matn)
+
+
+def _json_satrlar_ajrat(matn: str) -> list[dict]:
+    """Модель жавобидан JSON'ни ажратади (```json ... ``` бўлса ҳам)."""
+    m = re.search(r"\{.*\}", matn, re.S)
+    xom = m.group(0) if m else matn
+    try:
+        data = json.loads(xom)
+    except Exception:
+        return []
+    satrlar = []
+    for s in (data.get("satrlar") or []):
+        nom = str(s.get("tovar", "")).strip()
+        if not nom:
+            continue
+        satrlar.append({
+            "tovar": nom,
+            "soni": _raqam(s.get("soni")) or 1,
+            "narxi": _raqam(s.get("narxi")),
+        })
+    return {"satrlar": satrlar, "taminotchi": str(data.get("taminotchi", "")).strip(),
+            "valyuta": str(data.get("valyuta", "")).strip().lower()}
+
+
+async def _tovarni_moslash(satrlar: list[dict], session: AsyncSession) -> list[dict]:
+    """Ҳар бир сатрни stock билан солиштиради: бор бўлса uid/shk қўшади, йўқ бўлса yangi=True."""
+    natija = []
+    for s in satrlar:
+        nom = s["tovar"]
+        topilgan = (
+            await session.execute(
+                text("SELECT tovar_uid, tovar, shk, guruh, sotish_narxi "
+                     "FROM stock WHERE LOWER(tovar) = LOWER(:nom) "
+                     "OR shk = :nom OR tovar_kodi = :nom LIMIT 1"),
+                {"nom": nom},
+            )
+        ).first()
+        if not topilgan:
+            # қисман мослик (LIKE) — бир хил номланиш турлича ёзилса
+            topilgan = (
+                await session.execute(
+                    text("SELECT tovar_uid, tovar, shk, guruh, sotish_narxi "
+                         "FROM stock WHERE LOWER(tovar) LIKE :q ORDER BY tovar LIMIT 1"),
+                    {"q": "%" + nom.lower() + "%"},
+                )
+            ).first()
+        if topilgan:
+            natija.append({
+                "tovar_uid": topilgan.tovar_uid, "shk": topilgan.shk or "",
+                "tovar": topilgan.tovar, "guruh": topilgan.guruh or "",
+                "soni": s["soni"], "narxi": s["narxi"],
+                "sotish_narxi": float(topilgan.sotish_narxi or 0), "yangi": False,
+            })
+        else:
+            natija.append({
+                "tovar_uid": "", "shk": "", "tovar": nom, "guruh": "",
+                "soni": s["soni"], "narxi": s["narxi"],
+                "sotish_narxi": 0, "yangi": True,
+            })
+    return natija
+
+
+@app.post("/v1/kirim/analyze", dependencies=guard)
+async def kirim_analyze(
+    file: UploadFile = File(...),
+    kim: str = Depends(check_auth),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    bayt = await file.read()
+    if not bayt:
+        raise HTTPException(status_code=400, detail="Файл бўш")
+    if len(bayt) > 15 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Файл жуда катта (15 МБ гача)")
+
+    nom = (file.filename or "").lower()
+    mime = (file.content_type or "").lower()
+
+    taminotchi_taxmin, valyuta_taxmin = "", ""
+    if nom.endswith((".xlsx", ".xlsm", ".xls")) or "sheet" in mime or "excel" in mime:
+        xom_satrlar = _excel_satrlar(bayt)
+        manba = "excel"
+    elif mime.startswith("image/") or nom.endswith((".png", ".jpg", ".jpeg", ".webp", ".gif")):
+        if not mime.startswith("image/"):
+            mime = "image/jpeg"
+        natija = await _openai_ocr_satrlar(bayt, mime)
+        xom_satrlar = natija["satrlar"]
+        taminotchi_taxmin = natija.get("taminotchi", "")
+        valyuta_taxmin = natija.get("valyuta", "")
+        manba = "rasm"
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail="Файл тури нотўғри. Расм (jpg/png) ёки Excel (.xlsx) юкланг.",
+        )
+
+    if not xom_satrlar:
+        raise HTTPException(
+            status_code=422,
+            detail="Файлдан товар топилмади. Расм аниқроқ бўлсин ёки Excel устунлари "
+                   "(товар, сони, нарх) кўринарли бўлсин.",
+        )
+
+    satrlar = await _tovarni_moslash(xom_satrlar, session)
+    yangi_soni = sum(1 for s in satrlar if s["yangi"])
+    log.info("Кирим analyze (%s): %s сатр, %s янги — %s", manba, len(satrlar), yangi_soni, kim)
+
+    return javob({
+        "manba": manba,
+        "taminotchi_taxmin": taminotchi_taxmin,
+        "valyuta_taxmin": valyuta_taxmin,
+        "yangi_soni": yangi_soni,
+        "satrlar": satrlar,
+    })
 
 
 @app.get("/v1/kirim", dependencies=guard)
