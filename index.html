@@ -223,6 +223,13 @@ dialog::backdrop { background: rgba(20,30,20,.5); }
 .holat.bajarildi { background: #eaf6ec; color: var(--ok); }
 .holat.xato { background: #fdecea; color: var(--bad); }
 
+.yangi-bel { display: inline-block; font-size: 10px; font-weight: 700;
+  letter-spacing: .06em; padding: 2px 7px; border-radius: 20px;
+  background: #fdf3e0; color: var(--warn); vertical-align: middle; }
+.fayl-blok { display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin-bottom: 14px; }
+.fayl-blok .tanlangan { flex-basis: 100%; margin: 0; }
+
 @media (max-width: 820px) {
   .yon { transform: translateX(-100%); transition: transform .18s ease;
     box-shadow: 0 0 40px rgba(0,0,0,.15); }
@@ -1251,7 +1258,14 @@ dialog::backdrop { background: rgba(20,30,20,.5); }
   var kirimTaminotchi = "";
   var kirimTaminotchiUid = "";
   var kirimIzoh = "";
+  var kirimValyuta = "sum";   // "sum" ёки "usd"
+  var kirimKurs = 0;          // USD бўлса — курс
   var tamKesh = null;   // таъминотчилар рўйхати — бир марта юкланади
+
+  // Кирим нархи танланган валютада киритилади; шу коэффициент билан сўмга ўтади
+  function kirimFactor() {
+    return kirimValyuta === "usd" ? (Number(kirimKurs) || 0) : 1;
+  }
 
   function kirimChiz(d) {
     var r = d.royxat || [];
@@ -1265,30 +1279,53 @@ dialog::backdrop { background: rgba(20,30,20,.5); }
           '<div class="tanlangan" id="kTamHolat"></div></div>' +
         '<div><label>Изоҳ</label><input type="text" id="kIzoh" value="' +
           esc(kirimIzoh) + '" placeholder="Ихтиёрий"></div>' +
+        '<div><label>Валюта</label><select id="kVal">' +
+          '<option value="sum"' + (kirimValyuta === "sum" ? " selected" : "") + '>СЎМ</option>' +
+          '<option value="usd"' + (kirimValyuta === "usd" ? " selected" : "") + '>USD</option>' +
+        "</select></div>" +
+        '<div><label>Курс (USD→сўм)</label><input type="number" id="kKurs" step="any" value="' +
+          (kirimKurs || "") + '" placeholder="мас. 12800"' +
+          (kirimValyuta === "usd" ? "" : " disabled") + "></div>" +
+      "</div>" +
+      // Файлдан ўқиш: расм (AI) ёки Excel (бепул)
+      '<div class="fayl-blok">' +
+        '<input type="file" id="kFayl" accept="image/*,.xlsx,.xls" style="display:none">' +
+        '<button class="btn kichik" id="kFaylBtn">📷 Файлдан ўқиш (чек расми ёки Excel)</button>' +
+        '<span class="xira" id="kFaylNom" style="font-size:12px"></span>' +
+        '<div class="tanlangan" id="kFaylHolat"></div>' +
       "</div>" +
       qidirMaydon("kQ", "Қўшиш", "Штрих кодни сканерланг ёки ном ёзинг");
 
     if (kirimSavat.length) {
-      var jami = 0;
+      var f = kirimFactor();
+      var jami = 0, yangilar = 0;
       for (var i = 0; i < kirimSavat.length; i++) {
-        jami += (Number(kirimSavat[i].soni) || 0) * (Number(kirimSavat[i].narxi) || 0);
+        jami += (Number(kirimSavat[i].soni) || 0) * (Number(kirimSavat[i].narxi) || 0) * f;
+        if (kirimSavat[i].yangi) yangilar++;
       }
 
       html += '<div class="kartlar">' +
-        kart("Кирим суммаси", pul(jami), "", kirimSavat.length + " позиция", true) + "</div>";
+        kart("Кирим суммаси (сўм)", pul(jami), "", kirimSavat.length + " позиция" +
+          (yangilar ? " · " + yangilar + " янги" : ""), true) + "</div>";
 
+      var valYozuv = kirimValyuta === "usd" ? " (USD)" : "";
       html += '<div class="blok"><div class="hd">Қабул қилинаётган товарлар' +
         '<span class="osp"><button class="btn kichik" id="kYubor">1С га юбориш</button> ' +
         '<button class="btn kichik ghost" id="kTozala">Тозалаш</button></span></div><table>' +
-        "<tr><th>Товар</th><th class=\"r\">Сони</th><th class=\"r\">Кирим нархи</th>" +
-        "<th class=\"r\">Сотиш нархи</th><th class=\"r\">Сумма</th><th></th></tr>";
+        "<tr><th>Товар</th><th class=\"r\">Сони</th><th class=\"r\">Кирим нархи" + valYozuv + "</th>" +
+        "<th class=\"r\">Сотиш нархи</th><th class=\"r\">Сумма (сўм)</th><th></th></tr>";
 
       for (i = 0; i < kirimSavat.length; i++) {
         var x = kirimSavat[i];
-        var summa = (Number(x.soni) || 0) * (Number(x.narxi) || 0);
-        html += "<tr><td>" + esc(x.tovar) +
-          '<br><span class="xira" style="font-size:12px">' + esc(x.shk) +
-          (x.hisobda !== undefined ? " · қолдиқ " + son(x.hisobda) : "") + "</span></td>" +
+        var summa = (Number(x.soni) || 0) * (Number(x.narxi) || 0) * f;
+        var belgi = x.yangi
+          ? ' <span class="yangi-bel">ЯНГИ</span>'
+          : "";
+        var pastki = x.yangi
+          ? (x.guruh ? "гуруҳ: " + esc(x.guruh) : "1С да яратилади")
+          : (esc(x.shk) + (x.hisobda !== undefined ? " · қолдиқ " + son(x.hisobda) : ""));
+        html += "<tr><td>" + esc(x.tovar) + belgi +
+          '<br><span class="xira" style="font-size:12px">' + pastki + "</span></td>" +
           '<td class="r"><input class="fakt" type="number" step="any" data-f="soni" data-i="' +
             i + '" value="' + x.soni + '"></td>' +
           '<td class="r"><input class="fakt kn" type="number" step="any" data-f="narxi" data-i="' +
@@ -1301,7 +1338,7 @@ dialog::backdrop { background: rgba(20,30,20,.5); }
       html += "</table></div>";
     } else {
       html += '<div class="blok"><div class="bosh"><div class="em">▤</div>' +
-        "Штрих кодни сканерланг — товар рўйхатга тушади.<br>" +
+        "Файлдан ўқинг (чек расми ёки Excel) ёки штрих кодни сканерланг.<br>" +
         "Кирим нархини киритасиз, сотиш нархи бўш қолса 1С эскисини қолдиради.</div></div>";
     }
 
@@ -1380,6 +1417,104 @@ dialog::backdrop { background: rgba(20,30,20,.5); }
       iz.addEventListener("change", function () { kirimIzoh = this.value.trim(); });
     }
 
+    // Валюта / курс
+    var val = document.getElementById("kVal");
+    var kurs = document.getElementById("kKurs");
+    if (val) {
+      val.addEventListener("change", function () {
+        kirimValyuta = this.value;
+        kirimYukla();   // жадвални қайта чизади (сумма ва курс майдони янгиланади)
+      });
+    }
+    if (kurs) {
+      kurs.addEventListener("input", function () {
+        kirimKurs = Number(this.value) || 0;
+      });
+      kurs.addEventListener("change", function () {
+        kirimKurs = Number(this.value) || 0;
+        kirimYukla();   // суммаларни қайта ҳисоблайди
+      });
+    }
+
+    // Файлдан ўқиш (расм → AI, Excel → бепул)
+    var fbtn = document.getElementById("kFaylBtn");
+    var finp = document.getElementById("kFayl");
+    var fnom = document.getElementById("kFaylNom");
+    var fholat = document.getElementById("kFaylHolat");
+    if (fbtn && finp) {
+      fbtn.addEventListener("click", function () { finp.click(); });
+      finp.addEventListener("change", function () {
+        var fayl = this.files && this.files[0];
+        if (!fayl) return;
+        fnom.textContent = fayl.name;
+        fholat.textContent = "Ўқилмоқда… (бир неча сония)";
+        fholat.className = "tanlangan";
+        fbtn.disabled = true;
+
+        var s = oqi();
+        var fd = new FormData();
+        fd.append("file", fayl);
+        fetch("/v1/kirim/analyze", {
+          method: "POST",
+          headers: { "Authorization": "Basic " + btoa(s.usr + ":" + s.pwd) },
+          body: fd, cache: "no-store"
+        }).then(function (r) {
+          return r.json().then(function (j) {
+            if (!r.ok || !j.success) throw new Error(j.message || ("HTTP " + r.status));
+            return j.data;
+          });
+        }).then(function (d) {
+          fbtn.disabled = false;
+          var yangi = d.satrlar || [];
+          // Валютани файлдан таклиф қилса — қўямиз (фойдаланувчи ўзгартириши мумкин)
+          if (d.valyuta_taxmin === "usd" && kirimValyuta !== "usd") {
+            kirimValyuta = "usd";
+          }
+          if (d.taminotchi_taxmin && !kirimTaminotchi) {
+            kirimTaminotchi = d.taminotchi_taxmin;
+          }
+          // Саватга қўшамиз (номи бўйича дубликатни бирлаштирамиз)
+          var qoshildi = 0;
+          for (var i = 0; i < yangi.length; i++) {
+            var y = yangi[i];
+            var bor = -1;
+            for (var j = 0; j < kirimSavat.length; j++) {
+              if ((y.tovar_uid && kirimSavat[j].tovar_uid === y.tovar_uid) ||
+                  (kirimSavat[j].tovar || "").toLowerCase() === (y.tovar || "").toLowerCase()) {
+                bor = j; break;
+              }
+            }
+            if (bor >= 0) {
+              kirimSavat[bor].soni = (Number(kirimSavat[bor].soni) || 0) + (Number(y.soni) || 0);
+              if (!kirimSavat[bor].narxi && y.narxi) kirimSavat[bor].narxi = y.narxi;
+            } else {
+              kirimSavat.unshift({
+                tovar_uid: y.tovar_uid || "", shk: y.shk || "", tovar: y.tovar || "",
+                guruh: y.guruh || "", soni: Number(y.soni) || 1, narxi: Number(y.narxi) || 0,
+                sotish_narxi: Number(y.sotish_narxi) || 0, yangi: !!y.yangi
+              });
+            }
+            qoshildi++;
+          }
+          finp.value = "";
+          kirimYukla();
+          // kirimYukla қайта чизгач, ҳолатни кўрсатиш учун кечиктирамиз
+          setTimeout(function () {
+            var fh = document.getElementById("kFaylHolat");
+            if (fh) {
+              fh.textContent = "✓ " + qoshildi + " та товар қўшилди" +
+                (d.yangi_soni ? " · " + d.yangi_soni + " та ЯНГИ (текширинг)" : "");
+              fh.className = "tanlangan";
+            }
+          }, 30);
+        }).catch(function (e) {
+          fbtn.disabled = false;
+          fholat.textContent = "Хато: " + e.message;
+          fholat.className = "tanlangan yoq";
+        });
+      });
+    }
+
     var inp = document.getElementById("kQ");
     if (inp) {
       var qoshish = function () {
@@ -1402,7 +1537,9 @@ dialog::backdrop { background: rgba(20,30,20,.5); }
           } else {
             kirimSavat.unshift({
               tovar_uid: r.uid, shk: r.shk, tovar: r.tovar, hisobda: r.soni,
-              soni: 1, narxi: r.tannarx || 0, sotish_narxi: r.sotish_narxi || 0
+              guruh: r.guruh || "", yangi: false,
+              soni: 1, narxi: kirimValyuta === "usd" ? 0 : (r.tannarx || 0),
+              sotish_narxi: r.sotish_narxi || 0
             });
           }
           inp.value = "";
@@ -1445,11 +1582,33 @@ dialog::backdrop { background: rgba(20,30,20,.5); }
           if (tam) tam.focus();
           return;
         }
-        if (!confirm(kirimSavat.length + " та сатр 1С га юборилсинми?")) return;
+        var f = kirimFactor();
+        if (kirimValyuta === "usd" && (!kirimKurs || kirimKurs <= 0)) {
+          alert("USD танланган — курсни киритинг (мас. 12800).");
+          if (kurs) kurs.focus();
+          return;
+        }
+        var yangilar = 0;
+        for (var i = 0; i < kirimSavat.length; i++) if (kirimSavat[i].yangi) yangilar++;
+        var savol = kirimSavat.length + " та сатр 1С га юборилсинми?";
+        if (yangilar) savol += "\n(" + yangilar + " та ЯНГИ товар — 1С да яратилади)";
+        if (!confirm(savol)) return;
+
+        // Нархни сўмга ўтказиб юборамиз (1С ҳужжати СЎМда)
+        var satrlar = kirimSavat.map(function (x) {
+          return {
+            tovar_uid: x.tovar_uid || "", shk: x.shk || "", tovar: x.tovar || "",
+            guruh: x.guruh || "", yangi: !!x.yangi,
+            soni: Number(x.soni) || 0,
+            narxi: Math.round((Number(x.narxi) || 0) * f),
+            sotish_narxi: Number(x.sotish_narxi) || 0
+          };
+        });
+
         yb.disabled = true; yb.textContent = "Юборилмоқда…";
         sorov("kirim", "POST", {
           taminotchi: kirimTaminotchi, taminotchi_uid: kirimTaminotchiUid,
-          ombor: "", izoh: kirimIzoh, satrlar: kirimSavat
+          ombor: "", izoh: kirimIzoh, satrlar: satrlar
         }).then(function () {
           kirimSavat = []; kirimIzoh = ""; kirimYukla();
         }).catch(function (e) {
