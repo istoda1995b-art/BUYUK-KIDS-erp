@@ -1470,8 +1470,10 @@ dialog::backdrop { background: rgba(20,30,20,.5); }
           if (d.valyuta_taxmin === "usd" && kirimValyuta !== "usd") {
             kirimValyuta = "usd";
           }
+          // Таъминотчи фақат 1С да бор бўлса тўлдирилади (сервер солиштиради)
           if (d.taminotchi_taxmin && !kirimTaminotchi) {
             kirimTaminotchi = d.taminotchi_taxmin;
+            kirimTaminotchiUid = d.taminotchi_uid_taxmin || "";
           }
           // Саватга қўшамиз (номи бўйича дубликатни бирлаштирамиз)
           var qoshildi = 0;
