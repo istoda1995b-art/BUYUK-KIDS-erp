@@ -1261,7 +1261,7 @@ async def sync_taminotchi(
 @app.get("/v1/taminotchi", dependencies=guard)
 async def taminotchi_royxat(
     q: str | None = Query(None, max_length=100),
-    limit: int = Query(50, ge=1, le=300),
+    limit: int = Query(50, ge=1, le=2000),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     shart = ""
