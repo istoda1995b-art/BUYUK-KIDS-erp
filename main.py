@@ -1652,11 +1652,31 @@ async def kirim_analyze(
 
     satrlar = await _tovarni_moslash(xom_satrlar, session)
     yangi_soni = sum(1 for s in satrlar if s["yangi"])
-    log.info("Кирим analyze (%s): %s сатр, %s янги — %s", manba, len(satrlar), yangi_soni, kim)
+
+    # Таъминотчини 1С рўйхати (taminotchi) билан солиштирамиз — фақат базада
+    # бор бўлса тўлдирамиз (файлдаги номни ўзича ишлатмаймиз).
+    tam_nom, tam_uid = "", ""
+    if taminotchi_taxmin:
+        row = (await session.execute(
+            text("SELECT uid, nomi FROM taminotchi WHERE LOWER(nomi) = LOWER(:n) LIMIT 1"),
+            {"n": taminotchi_taxmin},
+        )).first()
+        if not row:
+            row = (await session.execute(
+                text("SELECT uid, nomi FROM taminotchi WHERE LOWER(nomi) LIKE :q "
+                     "ORDER BY nomi LIMIT 1"),
+                {"q": "%" + taminotchi_taxmin.lower() + "%"},
+            )).first()
+        if row:
+            tam_nom, tam_uid = row.nomi, row.uid
+
+    log.info("Кирим analyze (%s): %s сатр, %s янги, таъминотчи='%s' — %s",
+             manba, len(satrlar), yangi_soni, tam_nom, kim)
 
     return javob({
         "manba": manba,
-        "taminotchi_taxmin": taminotchi_taxmin,
+        "taminotchi_taxmin": tam_nom,        # фақат 1С да бор бўлса
+        "taminotchi_uid_taxmin": tam_uid,
         "valyuta_taxmin": valyuta_taxmin,
         "yangi_soni": yangi_soni,
         "satrlar": satrlar,
