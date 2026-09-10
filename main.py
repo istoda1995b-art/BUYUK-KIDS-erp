@@ -1286,6 +1286,20 @@ async def taminotchi_royxat(
     })
 
 
+# ── Сайт: гуруҳлар (янги товар учун — stock'даги мавжуд гуруҳлар) ──
+
+
+@app.get("/v1/guruhlar", dependencies=guard)
+async def guruhlar(session: AsyncSession = Depends(get_session)) -> dict:
+    rows = (
+        await session.execute(
+            text("SELECT DISTINCT guruh FROM stock "
+                 "WHERE guruh IS NOT NULL AND guruh <> '' ORDER BY guruh")
+        )
+    ).all()
+    return javob({"royxat": [r.guruh for r in rows]})
+
+
 # ── Сайт: кирим ───────────────────────────────────────
 
 
